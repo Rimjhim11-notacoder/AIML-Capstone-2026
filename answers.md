@@ -93,7 +93,7 @@ Test-Path data\features\demand_train.parquet
 .\.venv\Scripts\python.exe -m mlflow ui --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000
 ```
 ```bash
-.venv/bin/python -m mlflow ui --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000
+.venv/bin/python -m mlflow ui --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5001
 ```
 Open: http://127.0.0.1:5000
 
@@ -147,7 +147,7 @@ MLflow UI: http://localhost:5001
 
 ```bash
 docker version
-export TAXI_API_HOST_PORT=8001
+export TAXI_API_HOST_PORT=8002
 export MLFLOW_UI_HOST_PORT=5001
 docker compose -f docker/docker-compose.yml up --build
 ```
@@ -161,7 +161,7 @@ docker compose -f docker/docker-compose.yml up --build
 # Bash
 .venv/bin/python -m uvicorn src.serving.api:app --host 127.0.0.1 --port 8000
 ```
-API: http://127.0.0.1:8000
+API: http://127.0.0.1:8001
 
 
 
@@ -205,6 +205,11 @@ Invoke-RestMethod -Uri "http://localhost:8001/predict/fare" `
     -ContentType "application/json" `
     -Body $body
 ```
+
+input:
+demand='{"zone":132,"target_hour":"2024-02-01T00:00:00"}'
+curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$demand" http://127.0.0.1:8001/predict/demand
+curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$demand" http://127.0.0.1:8001/explain/demand
 
 **Step 5: Batch forecasting**
 ```powershell
@@ -300,11 +305,50 @@ aws codebuild batch-get-builds --ids $BuildId --region $Region `
 6. **Push** (cloud): ECR image push
 7. **Deploy** (cloud): ECS service update
 
+### GitHub Actions Workflow (Alternative to CodeBuild)
+
+**View the GitHub Actions workflow definition:**
+```bash
+cat .github/workflows/ci-cd.yml
+```
+
+**View recent workflow runs (gh CLI):**
+```bash
+# List recent runs
+gh run list --workflow=ci-cd.yml
+
+# View specific run with full details
+gh run view <run-id>
+
+# Watch a run in real-time
+gh run watch <run-id>
+```
+
+**View workflow status in GitHub:**
+1. Navigate to repository → **Actions** tab
+2. Click **CI/CD Pipeline** workflow
+3. Select any run to see:
+   - Job status (lint, test, build, deploy)
+   - Step-by-step logs
+   - Execution duration
+   - Coverage reports
+
+**Workflow features:**
+- ✅ Runs on every push and pull request
+- ✅ Lints with Ruff
+- ✅ Tests with pytest and coverage reporting
+- ✅ Automatically builds and deploys to AWS ECS on main branch
+- ✅ Zero-downtime rolling deployment
+- ✅ Status badges in README
+- ✅ Codecov integration for coverage tracking
+
 ### Important Notes for Video
 - Local CI does NOT include Docker or deployment
-- Cloud CI runs in AWS CodeBuild (show buildspec.yml lines only, don't execute)
-- Show line numbers in buildspec.yml where Docker build, ECR push, and ECS update occur
-- Mention: "No ECS stability waiter in buildspec - deployment requested, not verified"
+- GitHub Actions runs automatically on push/PR (no manual trigger needed)
+- Workflow configured in `.github/workflows/ci-cd.yml`
+- Deploy stage only runs on main branch merges
+- Show status badges in README that update in real-time
+- Coverage reports uploaded to Codecov automatically
 
 ---
 
@@ -557,44 +601,43 @@ Show clean setup instructions, trigger end-to-end execution, and demonstrate tra
 ### Full Setup Commands (SETUP.md)
 
 **Phase 1: Environment & Tests**
-```powershell
-# PowerShell
-py -3.11 --version
-py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe -m pytest
-.\.venv\Scripts\python.exe -m ruff check .
+```bash
+python3.11 --version
+python3.11 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pytest
+.venv/bin/python -m ruff check .
 ```
 
 **Phase 2: Data Pipeline**
-```powershell
-.\.venv\Scripts\python.exe -m scripts.run_pipeline --year 2024 --month 1
+```bash
+.venv/bin/python -m scripts.run_pipeline --year 2024 --month 1
 ```
 
 **Phase 3: Training & Registry**
-```powershell
-.\.venv\Scripts\python.exe -m scripts.train_models --n-trials 1
+```bash
+.venv/bin/python -m scripts.train_models --n-trials 1
 ```
 
 **Phase 4: API**
-```powershell
-.\.venv\Scripts\python.exe -m uvicorn src.serving.api:app --host 127.0.0.1 --port 8000
+```bash
+.venv/bin/python -m uvicorn src.serving.api:app --host 127.0.0.1 --port 8000
 # In another terminal:
 curl http://127.0.0.1:8000/health
 ```
 
 **Phase 5: Batch & Analysis**
-```powershell
-.\.venv\Scripts\python.exe -m scripts.batch_forecast --horizon 3
-.\.venv\Scripts\python.exe -m scripts.responsible.run_analysis
-.\.venv\Scripts\python.exe -m scripts.monitoring.demo_drift_report --problem all --mode drift
+```bash
+.venv/bin/python -m scripts.batch_forecast --horizon 3
+.venv/bin/python -m scripts.responsible.run_analysis
+.venv/bin/python -m scripts.monitoring.demo_drift_report --problem all --mode drift
 ```
 
 **Phase 6: Dashboard**
-```powershell
-$env:API_BASE_URL = "http://127.0.0.1:8000"
-.\.venv\Scripts\python.exe -m streamlit run dashboard/app.py --server.address 127.0.0.1 --server.port 8501
+```bash
+export API_BASE_URL="http://127.0.0.1:8000"
+.venv/bin/python -m streamlit run dashboard/app.py --server.address 127.0.0.1 --server.port 8501
 ```
 
 ### Traceable Evidence - What to Screenshot/Show

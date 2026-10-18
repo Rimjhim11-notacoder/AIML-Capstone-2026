@@ -1,5 +1,9 @@
 # Taxi Forecasting
 
+[![CI/CD Pipeline](https://github.com/yourusername/taxi-forecasting-student/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/yourusername/taxi-forecasting-student/actions/workflows/ci-cd.yml)
+[![codecov](https://codecov.io/gh/yourusername/taxi-forecasting-student/branch/main/graph/badge.svg)](https://codecov.io/gh/yourusername/taxi-forecasting-student)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/release/python-3110/)
+
 Python application for two NYC taxi prediction tasks:
 
 - **Demand:** pickup count for one pickup zone and hour.
