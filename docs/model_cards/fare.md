@@ -1,6 +1,6 @@
 # Model Card — taxi-fare-predictor
 
-_Generated: 2026-10-18 10:00 UTC_
+_Generated: 2026-10-18 15:52 UTC_
 
 ## Model details
 
@@ -17,44 +17,44 @@ Operational forecasting of fare_amount to support fleet positioning and rider fa
 
 | Metric | Value |
 |--------|-------|
-| rmse | 3.4378 |
-| mae | 0.8011 |
-| mape | 8.9865 |
-| r2 | 0.9559 |
+| rmse | 3.4717 |
+| mae | 0.8151 |
+| mape | 8.6912 |
+| r2 | 0.9550 |
 
 ## Evaluation — subgroup fairness
 
 ### By borough
 
-Disparity ratio (worst/best RMSE): **7.42** (threshold 1.5) — ⚠️ **flagged**. Worst: `Unknown`, best: `Manhattan`.
+Disparity ratio (worst/best RMSE): **8.12** (threshold 1.5) — ⚠️ **flagged**. Worst: `Unknown`, best: `Manhattan`.
 
 | Group | n | RMSE | MAE | MAPE |
 |-------|---|------|-----|------|
-| Unknown | 815 | 16.873 | 3.276 | 13.19 |
-| Bronx | 580 | 10.259 | 5.945 | 537.76 |
-| Brooklyn | 1946 | 8.741 | 4.602 | 17.43 |
-| Queens | 23747 | 7.941 | 2.529 | 15.86 |
-| Manhattan | 245640 | 2.274 | 0.583 | 6.99 |
+| Unknown | 815 | 18.418 | 3.352 | 12.60 |
+| Bronx | 580 | 10.251 | 6.148 | 452.63 |
+| Brooklyn | 1946 | 8.942 | 4.799 | 18.48 |
+| Queens | 23747 | 7.990 | 2.619 | 15.48 |
+| Manhattan | 245640 | 2.268 | 0.587 | 6.89 |
 
 ### By time_of_day
 
-Disparity ratio (worst/best RMSE): **1.85** (threshold 1.5) — ⚠️ **flagged**. Worst: `overnight`, best: `evening`.
+Disparity ratio (worst/best RMSE): **1.84** (threshold 1.5) — ⚠️ **flagged**. Worst: `overnight`, best: `evening`.
 
 | Group | n | RMSE | MAE | MAPE |
 |-------|---|------|-----|------|
-| overnight | 8572 | 5.628 | 1.352 | 6.49 |
-| afternoon | 101213 | 3.628 | 0.817 | 9.28 |
-| morning | 68332 | 3.302 | 0.873 | 8.48 |
-| evening | 94618 | 3.040 | 0.682 | 9.26 |
+| overnight | 8572 | 5.606 | 1.362 | 6.54 |
+| afternoon | 101213 | 3.691 | 0.836 | 9.32 |
+| morning | 68332 | 3.337 | 0.897 | 7.82 |
+| evening | 94618 | 3.046 | 0.684 | 8.84 |
 
 ### By day_type
 
-Disparity ratio (worst/best RMSE): **1.31** (threshold 1.5) — ok. Worst: `weekend`, best: `weekday`.
+Disparity ratio (worst/best RMSE): **1.32** (threshold 1.5) — ok. Worst: `weekend`, best: `weekday`.
 
 | Group | n | RMSE | MAE | MAPE |
 |-------|---|------|-----|------|
-| weekend | 3150 | 4.472 | 1.114 | 4.79 |
-| weekday | 269585 | 3.424 | 0.797 | 9.04 |
+| weekend | 3150 | 4.576 | 1.133 | 4.95 |
+| weekday | 269585 | 3.457 | 0.811 | 8.73 |
 
 ### By holiday
 
@@ -62,31 +62,31 @@ Disparity ratio (worst/best RMSE): **1.00** (threshold 1.5) — ok. Worst: `non-
 
 | Group | n | RMSE | MAE | MAPE |
 |-------|---|------|-----|------|
-| non-holiday | 272735 | 3.438 | 0.801 | 8.99 |
+| non-holiday | 272735 | 3.472 | 0.815 | 8.69 |
 
 ### By airport
 
-Disparity ratio (worst/best RMSE): **2.58** (threshold 1.5) — ⚠️ **flagged**. Worst: `airport`, best: `non-airport`.
+Disparity ratio (worst/best RMSE): **2.54** (threshold 1.5) — ⚠️ **flagged**. Worst: `airport`, best: `non-airport`.
 
 | Group | n | RMSE | MAE | MAPE |
 |-------|---|------|-----|------|
-| airport | 20957 | 7.409 | 2.161 | 15.55 |
-| non-airport | 251778 | 2.869 | 0.688 | 8.44 |
+| airport | 20957 | 7.411 | 2.243 | 15.11 |
+| non-airport | 251778 | 2.913 | 0.696 | 8.16 |
 
 ## Top features (SHAP)
 
 | Feature | Mean |SHAP| |
 |---------|-----------|
-| trip_distance | 8.1685 |
-| trip_duration_min | 3.4610 |
-| DOLocationID | 0.5085 |
-| PULocationID | 0.2040 |
-| passenger_count | 0.1041 |
-| hour_cos | 0.0513 |
-| hour_sin | 0.0352 |
-| hour | 0.0334 |
-| dow_sin | 0.0137 |
-| day_of_week | 0.0121 |
+| trip_distance | 6.8493 |
+| trip_duration_min | 3.7284 |
+| PULocationID | 0.6443 |
+| DOLocationID | 0.5209 |
+| passenger_count | 0.1070 |
+| hour_cos | 0.0818 |
+| hour | 0.0673 |
+| hour_sin | 0.0358 |
+| dow_sin | 0.0209 |
+| day_of_week | 0.0182 |
 
 ## Limitations
 
