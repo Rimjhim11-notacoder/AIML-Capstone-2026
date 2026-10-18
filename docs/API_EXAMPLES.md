@@ -51,7 +51,7 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/forecast/demand" -Con
 
 ```bash
 forecast='{"horizon_hours":3,"zones":[132,161,230]}'
-curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$forecast" http://127.0.0.1:8000/forecast/demand
+curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$forecast" http://127.0.0.1:8001/forecast/demand
 ```
 
 Without a start time, forecasting begins one hour after the latest stored demand
@@ -65,14 +65,14 @@ For the default January 2024 history, this requests the following hour:
 
 ```powershell
 $demand = @{ zone = 132; target_hour = "2024-02-01T00:00:00" } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/predict/demand" -ContentType "application/json" -Body $demand
-Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/explain/demand" -ContentType "application/json" -Body $demand
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8001/predict/demand" -ContentType "application/json" -Body $demand
+Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8001/explain/demand" -ContentType "application/json" -Body $demand
 ```
 
 ```bash
 demand='{"zone":132,"target_hour":"2024-02-01T00:00:00"}'
-curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$demand" http://127.0.0.1:8000/predict/demand
-curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$demand" http://127.0.0.1:8000/explain/demand
+curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$demand" http://127.0.0.1:8001/predict/demand
+curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$demand" http://127.0.0.1:8001/explain/demand
 ```
 
 Choose a time with sufficient prior lag/rolling history for other datasets.
@@ -89,7 +89,7 @@ Responses include an `X-Request-ID` header for tracing.
 ```python
 from clients.python.taxi_client import TaxiClient
 
-client = TaxiClient("http://127.0.0.1:8000")
+client = TaxiClient("http://127.0.0.1:8001")
 print(client.health())
 print(client.forecast_demand(horizon_hours=3, zones=[132, 161, 230]))
 ```
