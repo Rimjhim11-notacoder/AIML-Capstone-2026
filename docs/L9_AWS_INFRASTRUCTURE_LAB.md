@@ -240,6 +240,12 @@ terraform -chdir=infra/terraform init -backend=false     # load providers, skip 
 terraform -chdir=infra/terraform validate                # syntax + references are valid
 ```
 
+```bash
+terraform -chdir=infra/terraform fmt -check -recursive
+terraform -chdir=infra/terraform init -backend=false
+terraform -chdir=infra/terraform validate
+```
+
 - `fmt -check` fails loudly if formatting drifted — a cheap, deterministic correctness signal.
 - `init -backend=false` deliberately skips the remote (S3/DynamoDB) backend, so **no credentials are
 	needed** and no state is read or written.
@@ -284,6 +290,13 @@ $Ids = (aws codebuild list-builds-for-project --project-name taxi-forecasting-st
 	--region $Region --sort-order DESCENDING --query "ids[0:3]" --output text) -split "\s+"
 aws codebuild batch-get-builds --ids $Ids --region $Region `
 	--query "builds[].{Status:buildStatus,Phase:currentPhase,Start:startTime}"
+```
+
+```bash
+Region="us-east-1"
+IdsText=$(aws codebuild list-builds-for-project --project-name taxi-forecasting-staging-ci --region "$Region" --sort-order DESCENDING --query 'ids[0:3]' --output text)
+read -r -a Ids <<< "$IdsText"
+aws codebuild batch-get-builds --ids "${Ids[@]}" --region "$Region" --query 'builds[].{Status:buildStatus,Phase:currentPhase,Start:startTime}'
 ```
 
 Example output (sanitized):
@@ -374,6 +387,22 @@ aws scheduler get-schedule --region $Region `
 	--query "{State:State,Expression:ScheduleExpression,TargetInput:Target.Input}"
 ```
 
+```bash
+Region="us-east-1"
+Cluster=$(terraform -chdir=infra/terraform output -raw ecs_cluster_name)
+Service=$(terraform -chdir=infra/terraform output -raw ecs_service_name)
+ApiUrl=$(terraform -chdir=infra/terraform output -raw api_url)
+
+curl --fail --silent --show-error "$ApiUrl/health" | python -m json.tool
+aws ecs describe-services --region "$Region" --cluster "$Cluster" --services "$Service" --query 'services[0].{Status:status,Desired:desiredCount,Running:runningCount,Pending:pendingCount}'
+
+aws sagemaker describe-pipeline --region "$Region" --pipeline-name taxi-forecasting-retrain --query '{Name:PipelineName,Status:PipelineStatus,Updated:LastModifiedTime}'
+ExecutionArn=$(aws sagemaker list-pipeline-executions --region "$Region" --pipeline-name taxi-forecasting-retrain --max-results 1 --query 'PipelineExecutionSummaries[0].PipelineExecutionArn' --output text)
+aws sagemaker list-pipeline-execution-steps --region "$Region" --pipeline-execution-arn "$ExecutionArn" --query 'PipelineExecutionSteps[].{Step:StepName,Status:StepStatus}'
+aws scheduler list-schedules --region "$Region" --name-prefix taxi-forecasting-staging --query 'Schedules[].{Name:Name,State:State}'
+aws scheduler get-schedule --region "$Region" --name taxi-forecasting-staging-retrain --query '{State:State,Expression:ScheduleExpression,TargetInput:Target.Input}'
+```
+
 Example output (sanitized):
 
 ```json
@@ -413,6 +442,16 @@ aws sagemaker list-training-jobs --region $Region --max-results 5 --query "Train
 aws sagemaker list-endpoints --region $Region --query "Endpoints[].EndpointName"
 aws sagemaker list-model-package-groups --region $Region --query "ModelPackageGroupSummaryList[].ModelPackageGroupName"
 aws sagemaker list-models --region $Region --query "Models[].ModelName"
+```
+
+```bash
+Region="us-east-1"
+aws sagemaker list-pipelines --region "$Region" --query 'PipelineSummaries[].PipelineName'
+aws sagemaker list-processing-jobs --region "$Region" --sort-by CreationTime --sort-order Descending --max-results 12 --query 'ProcessingJobSummaries[].{Name:ProcessingJobName,Status:ProcessingJobStatus}'
+aws sagemaker list-training-jobs --region "$Region" --max-results 5 --query 'TrainingJobSummaries[].TrainingJobName'
+aws sagemaker list-endpoints --region "$Region" --query 'Endpoints[].EndpointName'
+aws sagemaker list-model-package-groups --region "$Region" --query 'ModelPackageGroupSummaryList[].ModelPackageGroupName'
+aws sagemaker list-models --region "$Region" --query 'Models[].ModelName'
 ```
 
 Example output (sanitized) — the shape you should expect on staging:

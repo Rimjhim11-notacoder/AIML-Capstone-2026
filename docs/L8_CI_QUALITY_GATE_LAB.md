@@ -21,13 +21,29 @@ update belong to the hosted deployment path. The local script does not deploy.
 
 ## Task 2: Create a Controlled Lint Failure
 
-First confirm `Test-Path scratch_ci_failure.py` returns `False`. If it already
-exists, stop and preserve it rather than overwriting someone else's file.
+Run the check that matches your terminal. In PowerShell:
+
+```powershell
+Test-Path scratch_ci_failure.py
+```
+
+In Bash:
+
+```bash
+if [[ -e scratch_ci_failure.py ]]; then echo True; else echo False; fi
+```
+
+If the file already exists, stop and preserve it rather than overwriting it.
 Create the temporary file containing an unused import:
 
 ```powershell
 Set-Content scratch_ci_failure.py 'import os'
 .\.venv\Scripts\python.exe -m ruff check scratch_ci_failure.py
+```
+
+```bash
+printf '%s\n' 'import os' > scratch_ci_failure.py
+.venv/bin/python -m ruff check scratch_ci_failure.py
 ```
 
 Confirm Ruff reports `F401`. This file is intentionally outside application
@@ -40,14 +56,23 @@ Remove-Item scratch_ci_failure.py
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
+```bash
+rm scratch_ci_failure.py
+.venv/bin/python -m ruff check .
+```
+
 Record the repository-wide result separately from repairing the deliberate
-scratch error. Verify the temporary file is gone:
+scratch error. Verify the temporary file is gone. In PowerShell:
 
 ```powershell
 Test-Path scratch_ci_failure.py
 ```
 
-The final command should return `False`.
+```bash
+if [[ -e scratch_ci_failure.py ]]; then echo True; else echo False; fi
+```
+
+The check should return `False` in either shell.
 
 In the finalized R8 recording, the scratch repair is complete while three
 separate Ruff findings keep the wider gate red; pytest passes. That is historical
@@ -63,11 +88,21 @@ When Terraform is installed:
 .\scripts\ci_local.ps1
 ```
 
+```bash
+pwsh -File ./scripts/ci_local.ps1
+```
+
 When Terraform is unavailable:
 
 ```powershell
 .\scripts\ci_local.ps1 -NoTerraform
 ```
+
+```bash
+pwsh -File ./scripts/ci_local.ps1 -NoTerraform
+```
+
+These Bash commands require PowerShell 7 (`pwsh`).
 
 Record which route was used and the final result.
 
@@ -80,6 +115,20 @@ separate post-deployment checks, so a successful CodeBuild run does not by
 itself prove that the new task became healthy. Inspect these steps without
 running them locally or exposing AWS credentials, account identifiers, or
 repository URLs.
+
+Answer from `buildspec.yml`, `infra/terraform/cicd.tf`,
+`infra/terraform/variables.tf`, and `infra/terraform/main.tf`:
+
+```text
+The build stage fetches model artifacts from S3 and logs in to ECR. It builds
+and pushes ECR_REPOSITORY_URL:IMAGE_TAG. If IMAGE_TAG is not latest, it also
+pushes the same image as latest. Terraform defaults IMAGE_TAG to latest and
+configures the ECR repository as MUTABLE, so the tag is not guaranteed
+immutable. The post_build stage calls aws ecs update-service with
+--force-new-deployment. The buildspec has no ECS stability waiter or API smoke
+test. A successful build shows that deployment was requested, not that the new
+task became healthy. Check ECS rollout and API health separately.
+```
 
 ## Task 6: Inspect One Hosted Build
 
@@ -94,6 +143,13 @@ $BuildId = aws codebuild list-builds-for-project `
 	--query "ids[0]" --output text
 aws codebuild batch-get-builds --ids $BuildId --region $Region `
 	--query "builds[0].{Status:buildStatus,Revision:resolvedSourceVersion,Phase:currentPhase,Phases:phases[].{Name:phaseType,Status:phaseStatus}}"
+```
+
+```bash
+Region="us-east-1"
+Project=$(terraform -chdir=infra/terraform output -raw cicd_project_name)
+BuildId=$(aws codebuild list-builds-for-project --project-name "$Project" --region "$Region" --sort-order DESCENDING --query 'ids[0]' --output text)
+aws codebuild batch-get-builds --ids "$BuildId" --region "$Region" --query 'builds[0].{Status:buildStatus,Revision:resolvedSourceVersion,Phase:currentPhase,Phases:phases[].{Name:phaseType,Status:phaseStatus}}'
 ```
 
 Compare the hosted phases with `buildspec.yml`. A successful build supports that those configured

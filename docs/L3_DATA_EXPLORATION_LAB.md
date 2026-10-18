@@ -97,6 +97,73 @@ For each finding record the notebook output or artifact, its configured period,
 what it supports, and one limit. Counts can differ when input data or configuration
 changes; preserve and investigate the difference instead of forcing a match.
 
+## Observed Answers: January 2024 Artifacts
+
+These figures come from persisted January 2024 artifacts. Notebook execution was
+verified: all code cells ran in order, and the final cell printed
+`All lineage checks passed.`
+
+### Source and Configuration
+
+- Period: January 2024 Yellow Taxi data.
+- Trips: `https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2024-01.parquet`, saved under `data/raw/`.
+- Zone lookup: `https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv`, saved under `data/raw/`.
+- The lookup lists 265 zones. Demand uses 253 pickup zones.
+- Ingestion downloads and loads files. Later stages validate, clean, aggregate,
+  engineer features, and split the data.
+
+### Finding 1: Cleaning
+
+Evidence: `data/processed/pipeline_summary.json` and `trips_clean.parquet`.
+
+- Raw: 2,964,624 trips across 19 columns. Retained: 2,727,349. Removed: 237,275.
+- Passenger count has 140,162 nulls. The cleaner treats null as zero.
+- The largest removal reason was passenger count out of range: 167,879 trips.
+- Other removals: duration 36,999; fare 32,321; distance 58; period 18.
+- Raw fares ranged from -$899 to $5,000. The configured fare range is $0 to $500.
+- These counts reflect project filters. They do not prove every removed trip was
+  invalid.
+
+### Finding 2: Demand
+
+Evidence: `data/processed/demand_hourly.parquet` and the zone lookup.
+
+- Coverage: 253 zones over 744 hours. The table has 188,232 unique zone-hour rows.
+- It contains 118,510 zero-count rows.
+- Zone 132 (JFK Airport, Queens) was busiest, with 135,950 pickups.
+- Upper East Side South was next with 135,538 pickups. Midtown Center had 135,068.
+- Hour 18:00 had the highest monthly total: 196,249 pickups.
+- Zero rows may be inserted. A row represents a zone-hour, not one trip.
+- This is one month of Yellow Taxi data using broad TLC zones.
+
+### Finding 3: Features and Splits
+
+Evidence: the fare and demand feature tables and their six split files under
+`data/features/`.
+
+- Fare features preserve all 2,727,349 clean trips and have 16 columns. The
+  sample plot shows fares generally rise with distance, but distance alone does
+  not explain the spread or outliers.
+- Demand features have 145,728 rows and start January 8 at 00:00. The 168-hour
+- Demand features have 145,728 rows and 23 columns. They start January 8 at
+  00:00 after a 168-hour warm-up removes 42,504 zone-hour rows. Lags are 1, 2,
+  3, 24, and 168 hours; rolling windows are 3, 24, and 168 hours.
+- Fare splits: train 2,181,879 (Jan 1 00:00 to Jan 26 06:29:51); validation
+  272,735 (Jan 26 06:29:55 to Jan 28 22:20:01); test 272,735 (Jan 28 22:20:03
+  to Jan 31 23:59:55).
+- Demand splits: train 116,582 (Jan 8 00:00 to Jan 27 04:00); validation
+  14,573 (Jan 27 04:00 to Jan 29 14:00); test 14,573 (Jan 29 14:00 to Jan 31
+  23:00).
+- Demand rows share boundary timestamps across neighboring splits. The split
+  helper sorts and slices by row count, so the partitions are not strictly
+  timestamp-disjoint.
+- One month of data cannot establish performance on future months.
+- All 13 expected artifact paths existed. Final checks confirmed fare row
+  preservation, unique zone-hour keys, and nondecreasing split times.
+- One month cannot establish performance on future months.
+
+
+
 ## Completion Check
 
 - Source and configuration are identified before interpreting results.

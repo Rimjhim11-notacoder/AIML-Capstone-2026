@@ -2,8 +2,8 @@
 
 Run all commands from the repository root using Python 3.11. Allow several GB
 for packages, data and model artifacts; 16 GB RAM is recommended for full-data
-training. Commands below use Windows PowerShell and the explicit virtual
-environment interpreter. On other systems use the corresponding `.venv/bin/python`.
+training. Each command example includes PowerShell followed by its Bash
+equivalent. Both use the explicit virtual-environment interpreter.
 
 ## 1. Environment and Tests
 
@@ -16,21 +16,31 @@ py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m ruff check .
 ```
 
+```bash
+python3.11 --version
+python3.11 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pytest
+.venv/bin/python -m ruff check .
+```
+
 No activation or execution-policy change is necessary. The test suite uses
 synthetic inputs and mocked cloud clients. A passing test suite does not prove
 cloud availability or model accuracy. Core requirements do not include the
 optional dashboard or managed-monitoring dependencies.
 
 Use 64-bit Python 3.11 even when a newer system Python is installed. Verify with
-`.\.venv\Scripts\python.exe --version`; an existing environment keeps the version
-used to create it. Select this environment with VS Code's Microsoft Python
+`\.venv\Scripts\python.exe --version` (PowerShell) or `.venv/bin/python --version`
+(Bash); an existing environment keeps the version used to create it. Select this environment with VS Code's Microsoft Python
 extension. For notebooks, also install Microsoft's Jupyter extension and select
 the same `.venv` kernel. The dependency list includes notebook support, not
 presentation-authoring software.
 
 Plain `pytest` does not enable coverage automatically. To check the configured
-coverage threshold, use `python -m pytest --cov=src --cov-report=term-missing`
-with this environment's interpreter. The [recording companion](RECORDING_COMPANION.md)
+coverage threshold, use `\.venv\Scripts\python.exe -m pytest --cov=src --cov-report=term-missing`
+in PowerShell or `.venv/bin/python -m pytest --cov=src --cov-report=term-missing`
+in Bash. The [recording companion](RECORDING_COMPANION.md)
 maps each activity to its lab and records fresh-checkout differences.
 
 ## 2. Data Pipeline
@@ -40,6 +50,10 @@ Defaults select January 2024 Yellow Taxi records from NYC TLC. Review
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.run_pipeline --year 2024 --month 1
+```
+
+```bash
+.venv/bin/python -m scripts.run_pipeline --year 2024 --month 1
 ```
 
 This downloads raw data, cleans trips, creates dense hourly zone counts, builds
@@ -63,8 +77,14 @@ Optional browser-based alternative:
 .\.venv\Scripts\python.exe -m jupyterlab notebooks/01_explore_dataset.ipynb
 ```
 
-The recorded `python -m scripts.build_explore_notebook` preparation command is
-included, but overwrites the notebook. Do not run it after adding work you need.
+```bash
+.venv/bin/python -m jupyterlab notebooks/01_explore_dataset.ipynb
+```
+
+The `python -m scripts.build_explore_notebook` preparation command is available
+as `\.venv\Scripts\python.exe -m scripts.build_explore_notebook` in PowerShell
+or `.venv/bin/python -m scripts.build_explore_notebook` in Bash. It overwrites
+the notebook. Do not run it after adding work you need.
 
 ## 3. Training and Registry
 
@@ -72,6 +92,10 @@ Start with one tuning trial per estimator on each problem:
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.train_models --n-trials 1
+```
+
+```bash
+.venv/bin/python -m scripts.train_models --n-trials 1
 ```
 
 Both XGBoost and LightGBM use the full splits. This is still substantive
@@ -88,6 +112,10 @@ SHAP plots and model cards are generated under `artifacts/`. The optional
 .\.venv\Scripts\python.exe -m mlflow ui --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000
 ```
 
+```bash
+.venv/bin/python -m mlflow ui --backend-store-uri sqlite:///mlflow.db --host 127.0.0.1 --port 5000
+```
+
 The UI at <http://127.0.0.1:5000> does not train or register a model itself.
 
 ## 4. API
@@ -98,10 +126,18 @@ After preparing both registered models and demand history:
 .\.venv\Scripts\python.exe -m uvicorn src.serving.api:app --host 127.0.0.1 --port 8000
 ```
 
+```bash
+.venv/bin/python -m uvicorn src.serving.api:app --host 127.0.0.1 --port 8000
+```
+
 Use <http://127.0.0.1:8000/docs> for requests. Check readiness in another terminal:
 
 ```powershell
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/health"
+```
+
+```bash
+curl --fail --silent --show-error http://127.0.0.1:8000/health
 ```
 
 Require JSON `status: ok`, both models loaded, and nonzero history and zones.
@@ -114,6 +150,12 @@ cover fare, demand, recursive forecasting and SHAP requests.
 .\.venv\Scripts\python.exe -m scripts.batch_forecast --horizon 3
 .\.venv\Scripts\python.exe -m scripts.responsible.run_analysis
 .\.venv\Scripts\python.exe -m scripts.monitoring.demo_drift_report --problem all --mode drift
+```
+
+```bash
+.venv/bin/python -m scripts.batch_forecast --horizon 3
+.venv/bin/python -m scripts.responsible.run_analysis
+.venv/bin/python -m scripts.monitoring.demo_drift_report --problem all --mode drift
 ```
 
 Batch forecasts append rows to `predictions.db`. Repeated runs do not replace
@@ -137,6 +179,12 @@ $env:API_BASE_URL = "http://127.0.0.1:8000"
 .\.venv\Scripts\python.exe -m streamlit run dashboard/app.py --server.address 127.0.0.1 --server.port 8501
 ```
 
+```bash
+.venv/bin/python -m pip install -r requirements-dashboard.txt
+export API_BASE_URL="http://127.0.0.1:8000"
+.venv/bin/python -m streamlit run dashboard/app.py --server.address 127.0.0.1 --server.port 8501
+```
+
 Open <http://127.0.0.1:8501>. The dashboard combines live API calls with local
 report files; their timestamps and model identities may differ. Missing reports
 are displayed as unavailable, not replaced with bundled historical results.
@@ -150,6 +198,11 @@ registration. Create a portable copy of the registry for Linux artifact paths:
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.make_mlflow_portable --src mlflow.db --dest mlflow.container.db --new-base file:///app/mlruns
+docker compose -f docker/docker-compose.yml up --build
+```
+
+```bash
+.venv/bin/python -m scripts.make_mlflow_portable --src mlflow.db --dest mlflow.container.db --new-base file:///app/mlruns
 docker compose -f docker/docker-compose.yml up --build
 ```
 

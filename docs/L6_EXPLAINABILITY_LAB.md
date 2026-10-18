@@ -17,6 +17,10 @@ loads. If no fare model is registered, run this bounded teaching configuration:
 .\.venv\Scripts\python.exe -m scripts.train_models --problem fare --n-trials 1
 ```
 
+```bash
+.venv/bin/python -m scripts.train_models --problem fare --n-trials 1
+```
+
 In the MLflow UI, confirm `taxi-fare-predictor` has a registered version and
 accessible model artifacts. A one-trial model is sufficient for this exercise,
 not production approval. If a suitable version already exists, reuse it and
@@ -32,6 +36,10 @@ From the repository root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.responsible.run_analysis --problem fare
+```
+
+```bash
+.venv/bin/python -m scripts.responsible.run_analysis --problem fare
 ```
 
 Record the command result and the artifact paths it creates or refreshes.
@@ -67,11 +75,32 @@ This suggests [plain-language interpretation]. The evidence does not prove
 SHAP describes how model inputs contribute to predictions. It does not prove
 that changing a feature causes the real-world outcome to change.
 
+Answer based on `artifacts/responsible/fare_shap_summary.png` and
+`docs/model_cards/fare.md`:
+
+```text
+For this LGBMRegressor and analysis sample, trip distance has the greatest
+global influence (mean absolute SHAP value 8.1685); higher distances generally
+push predicted fares upward. This suggests the model relies strongly on trip
+length. It does not prove a causal effect or explain one specific trip. The card
+reports registry version n/a.
+```
+
 ## Task 4: Connect the Model Card
 
 Record one intended use, one limitation, and one monitoring or review action
 from the model card. Explain how each item changes the way the SHAP result
 should be communicated.
+
+Answer from `docs/model_cards/fare.md`:
+
+```text
+Intended use: support fleet positioning and rider fare estimates, not individual
+pricing decisions. Limitation: the model uses one month of Yellow Taxi data and
+may not generalize. Review subgroup errors: borough, time-of-day, and airport
+disparities are flagged. So describe the SHAP result only for this model and
+sample, not as a universal or fairness claim.
+```
 
 ## Completion Check
 

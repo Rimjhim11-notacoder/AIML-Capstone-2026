@@ -10,6 +10,10 @@ Start the API after data preparation and model registration as described in
 Invoke-RestMethod -Uri "http://127.0.0.1:8000/health"
 ```
 
+```bash
+curl --fail --silent --show-error http://127.0.0.1:8000/health
+```
+
 Inspect the body, not just the status code. Require both model flags and
 `status: ok` for prediction readiness.
 
@@ -27,6 +31,12 @@ Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/predict/fare" -Conten
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/explain/fare" -ContentType "application/json" -Body $fare
 ```
 
+```bash
+fare='{"trip_distance":3.4,"pu_location_id":132,"do_location_id":230,"passenger_count":1,"pickup_datetime":"2024-01-15T18:30:00"}'
+curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$fare" http://127.0.0.1:8000/predict/fare
+curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$fare" http://127.0.0.1:8000/explain/fare
+```
+
 The response predicts `fare_amount` in dollars, not `total_amount`. Duration is
 estimated when `trip_duration_min` is omitted, indicated by `duration_estimated`.
 Include a valid duration when it is available at the intended prediction time.
@@ -37,6 +47,11 @@ SHAP contributions describe model arithmetic, not causal effects.
 ```powershell
 $forecast = @{ horizon_hours = 3; zones = @(132, 161, 230) } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/forecast/demand" -ContentType "application/json" -Body $forecast
+```
+
+```bash
+forecast='{"horizon_hours":3,"zones":[132,161,230]}'
+curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$forecast" http://127.0.0.1:8000/forecast/demand
 ```
 
 Without a start time, forecasting begins one hour after the latest stored demand
@@ -52,6 +67,12 @@ For the default January 2024 history, this requests the following hour:
 $demand = @{ zone = 132; target_hour = "2024-02-01T00:00:00" } | ConvertTo-Json
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/predict/demand" -ContentType "application/json" -Body $demand
 Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/explain/demand" -ContentType "application/json" -Body $demand
+```
+
+```bash
+demand='{"zone":132,"target_hour":"2024-02-01T00:00:00"}'
+curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$demand" http://127.0.0.1:8000/predict/demand
+curl --fail --silent --show-error -H 'Content-Type: application/json' -d "$demand" http://127.0.0.1:8000/explain/demand
 ```
 
 Choose a time with sufficient prior lag/rolling history for other datasets.

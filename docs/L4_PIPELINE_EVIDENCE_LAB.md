@@ -28,12 +28,20 @@ the following command (requires internet), then use Task 2 for the cached rerun:
 .\.venv\Scripts\python.exe -m scripts.run_pipeline --year 2024 --month 1
 ```
 
+```bash
+.venv/bin/python -m scripts.run_pipeline --year 2024 --month 1
+```
+
 ## Task 2: Run the Pipeline
 
 From the repository root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.run_pipeline --skip-download
+```
+
+```bash
+.venv/bin/python -m scripts.run_pipeline --skip-download
 ```
 
 Record whether the command completed and identify the last successful stage.
@@ -67,25 +75,33 @@ Confirm that:
 ### Evidence or output paths
 
 ```text
-
+data/processed/pipeline_summary.json
+data/processed/trips_clean.parquet
+data/processed/demand_hourly.parquet
+data/features/demand_features.parquet
+data/features/fare_features.parquet
+data/features/{demand,fare}_{train,val,test}.parquet
 ```
 
 ### Main finding
 
 ```text
-
+All six consistency checks passed. Fare features and hourly pickups both match
+the 2,727,349 clean trips. Demand has 188,232 unique zone-hour rows.
 ```
 
 ### Decision or next action
 
 ```text
-
+Use these feature files for modeling. Check shared demand split hours during
+evaluation.
 ```
 
 ### Limitation
 
 ```text
-
+This is one month of local Yellow Taxi data. It does not prove model accuracy
+or performance on future months.
 ```
 
 ## Completion Check

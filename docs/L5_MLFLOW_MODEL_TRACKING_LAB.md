@@ -15,6 +15,13 @@ Test-Path data\features\fare_test.parquet
 Test-Path mlflow.db
 ```
 
+```bash
+if [[ -f data/features/fare_train.parquet ]]; then echo True; else echo False; fi
+if [[ -f data/features/fare_val.parquet ]]; then echo True; else echo False; fi
+if [[ -f data/features/fare_test.parquet ]]; then echo True; else echo False; fi
+if [[ -f mlflow.db ]]; then echo True; else echo False; fi
+```
+
 Generate missing feature files with the L4 pipeline. `mlflow.db` is created when
 training first logs to the local tracking store.
 
@@ -29,6 +36,10 @@ validation metric should decide the comparison.
 .\.venv\Scripts\python.exe -m scripts.train_models --problem fare --n-trials 1 --no-register
 ```
 
+```bash
+.venv/bin/python -m scripts.train_models --problem fare --n-trials 1 --no-register
+```
+
 Keep the run names, validation metrics, and selected candidate visible. The
 `--no-register` option records runs without changing the model registry.
 
@@ -38,6 +49,10 @@ Start the local UI in a separate terminal:
 
 ```powershell
 .\.venv\Scripts\python.exe -m mlflow ui --backend-store-uri sqlite:///mlflow.db
+```
+
+```bash
+.venv/bin/python -m mlflow ui --backend-store-uri sqlite:///mlflow.db
 ```
 
 Open `http://127.0.0.1:5000`. Compare at least two runs using their parameters,

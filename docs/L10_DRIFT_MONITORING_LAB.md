@@ -1,368 +1,285 @@
-# L10: Inject and Interpret Synthetic Drift
+# L10: Inject and Interpret Synthetic Drift — Task Answers
 
-- **Duration:** 70 to 85 minutes (no fixed cap; depth over speed)
-- **Cloud required:** Optional instructor demonstration; students need no credentials
-- **Docker required on the learner machine:** **No**
-- **Outcome:** A synthetic drift finding, a clear map of the monitoring-and-retraining AWS
-	resources, read-only CloudWatch / S3 / SageMaker evidence, and a guided console tour of the pages
-	where drift detection appears — code and committed evidence first, with the console read as a live
-	confirming view.
+**Generation Context:**
+- Command: `./.venv/bin/python -m scripts.monitoring.demo_drift_report --problem all --mode drift`
+- Seed: 42 (default)
+- Mode: `drift` (deliberately perturbs current sample)
+- Execution time: 2026-10-18 (during lab)
+- Output paths: `artifacts/drift/demand_drift_metrics.json` and `artifacts/drift/fare_drift_metrics.json`
 
-> **Docker boundary:** the required synthetic drift exercise is a Python command
-> and runs without Docker. References to a monitoring image, ECR, container
-> arguments, or SageMaker Processing describe optional remote AWS execution.
-> Learners do not build or run that image locally. If AWS is unavailable, retain
-> the local drift report and label the AWS inspection as skipped.
-
-## How This Lab Teaches Monitoring (Read First)
-
-This lab uses the same code-and-evidence-first approach as L9, and **also** tours the live console so
-you can see the drift pages directly. Read each page correctly, because the console can mislead for
-this stack:
-
-- The SageMaker **Dashboard** counts only *active/running* resources, so a finished drift Processing
-	job shows as zero there — open **Processing jobs**, not the Dashboard.
-- The **Pipelines UI** needs a Studio domain (there are none). Use the CLI and the **Processing
-	jobs** page instead.
-- Drift work is proven by three durable sources that the console tour confirms: the **code**
-	(`src/monitoring/`, `scripts/monitoring/`), the **Terraform** that schedules it
-  (`infra/terraform/monitoring.tf`), and generated reports retained with execution
-   context. Generated artifacts are not guaranteed to be in a fresh checkout.
-   Keep account IDs, ARNs, and usernames hidden while touring.
-
-### Monitoring & retraining resource map
-
-| Resource | AWS service | Declared in | Role |
-| --- | --- | --- | --- |
-| Monitoring bucket | S3 | [`monitoring.tf`](../infra/terraform/monitoring.tf) | Captured inference inputs + drift reports. |
-| Capture stream | Kinesis Firehose | [`monitoring.tf`](../infra/terraform/monitoring.tf) | Ships prediction-capture logs to S3 under `captured/`. |
-| Drift + 5xx alarms, dashboard | CloudWatch | [`monitoring.tf`](../infra/terraform/monitoring.tf) | Alarm on `FeaturesDrifted`; operational dashboard. |
-| Alerts topic | SNS | [`monitoring.tf`](../infra/terraform/monitoring.tf) | Notifies on drift / API 5xx / retraining. |
-| SageMaker execution role | IAM | [`monitoring.tf`](../infra/terraform/monitoring.tf) | Assumed by the drift + retraining jobs. |
-| Retraining schedule | EventBridge Scheduler | [`monitoring.tf`](../infra/terraform/monitoring.tf) | Weekly pipeline start, `DeployAfterQualityGate=false`. |
-| **Drift Processing-job schedule** | EventBridge Scheduler + SageMaker Processing | [`monitoring.tf`](../infra/terraform/monitoring.tf) | Optional weekly drift job (gated on `monitoring_image_uri`). |
-| Drift entrypoint | (runs on SageMaker) | [`scripts/monitoring/run_drift_job.py`](../scripts/monitoring/run_drift_job.py) | Computes PSI/KS, writes `drift_metrics.json`, pushes CloudWatch metrics. |
-| Retraining pipeline | SageMaker Pipeline | [`retraining/pipeline.py`](../retraining/pipeline.py) | `Train → Evaluate → QualityGate → BuildAndDeploy`. |
-
-## Monitoring Architecture Diagram
-
-How a live prediction becomes drift evidence, an alarm, and — only with human
-authorization — a released model.
-
-```text
-  ┌──────────┐  POST /predict/fare
-  │  Client  │─────────────┐
-  └──────────┘             ▼
-                 ┌────────────────────┐
-                 │ ALB ─▶ ECS Fargate │   response returns immediately;
-                 │   FastAPI + model  │   capture is asynchronous and
-                 └─────────┬──────────┘   NEVER blocks the caller
-                           │ structured capture line -> stdout
-                           ▼
-                 ┌────────────────────┐
-                 │ CloudWatch Logs    │
-                 │  /ecs/<api> stream │
-                 └─────────┬──────────┘
-                           │ subscription filter (IAM: logs_to_firehose)
-                           ▼
-                 ┌────────────────────┐
-                 │ Kinesis Firehose   │  buffers, retries, batches
-                 │  "capture" stream  │
-                 └─────────┬──────────┘
-                           ▼
-             ┌─────────────────────────────┐
-             │ S3  monitoring bucket       │
-             │   captured/      ◀── inputs │  lifecycle-expired after
-             │   drift-reports/ ◀── output │  capture_retention_days
-             └───────┬─────────────▲───────┘
-      reads current  │             │ writes drift_metrics.json
-                     ▼             │
-   ┌─────────────────────────────────────────┐
-   │ SageMaker Processing job (drift)        │◀── EventBridge Scheduler
-   │  scripts/monitoring/run_drift_job.py    │    "drift" (weekly, gated on
-   │  1 load reference   4 write report      │     monitoring_image_uri)
-   │  2 load current(S3) 5 push CloudWatch   │
-   │  3 PSI + KS         6 exit code         │
-   └────────────────────┬────────────────────┘
-                        │ PutMetricData: FeaturesDrifted
-                        ▼
-   ┌─────────────────────────────┐    ┌──────────────────────────┐
-   │ CloudWatch                  │───▶│ SNS "alerts" topic       │
-   │  · drift alarm              │    │  └─ email subscription   │
-   │  · API 5xx alarm            │    └──────────────────────────┘
-   │  · monitoring dashboard     │
-   └─────────────────────────────┘
-                        │
-                        │  ⚠ NO automatic arrow to retraining
-                        ▼
-              ┌───────────────────────┐
-              │  HUMAN INVESTIGATION  │  freshness? schema? seasonality?
-              │  (decision, not code) │  segment mix? real degradation?
-              └───────────┬───────────┘
-                          ▼
-   ┌──────────────────────────────────────────────────────┐
-   │ SageMaker Pipeline  taxi-forecasting-retrain         │◀── EventBridge
-   │   TrainModels ─▶ EvaluateModels ─▶ QualityGate       │    "retrain"
-   │                                        │             │    (weekly)
-   │                     ┌──────────────────┴──────────┐  │
-   │                     │ 5 conditions must ALL pass: │  │
-   │                     │  1 demand RMSE ≤ 50         │  │
-   │                     │  2 fare   RMSE ≤ 5          │  │
-   │                     │  3 demand vs baseline ≤ 20% │  │
-   │                     │  4 fare   vs baseline ≤ 20% │  │
-   │                     │  5 DeployAfterQualityGate   │  │
-   │                     │    requires "true"          │  │
-   │                     │    schedule sends "false"   │  │
-   │                     │    so deployment is BLOCKED │  │
-   │                     └──────────────────┬──────────┘  │
-   │                              BuildAndDeploy ✗ never  │
-   │                              eligible on schedule    │
-   └──────────────────────────────────────────────────────┘
-```
-
-### The four-stage escalation (each stage needs its own evidence)
-
-```text
-  STAGE 1          STAGE 2             STAGE 3            STAGE 4
-  DETECT      ──▶  INVESTIGATE    ──▶  RETRAIN       ──▶  RELEASE
-  ────────         ───────────         ───────────        ─────────
-  PSI crossed      is it real?         train candidate    deploy it
-  its threshold;   data bug?           evaluate vs        to ECS
-  KS adds context  seasonality?        baseline
-                   segment mix?
-  ────────         ───────────         ───────────        ─────────
-  evidence:        evidence:           evidence:          evidence:
-  distribution     data quality +      RMSE vs gate       explicit human
-  statistics       domain context      + vs baseline      authorization
-  ────────         ───────────         ───────────        ─────────
-  AUTOMATED        HUMAN               AUTOMATED          HUMAN
-  (weekly job)     (this lab)          (pipeline)         (gate input)
-```
-
-> The single most important teaching point in this lab: **stage 1 does not imply stage 3.**
-> A distribution alarm is evidence that inputs moved, not evidence that the model got worse.
-> There is no alert-to-pipeline trigger in this implementation. Separately,
-> `DeployAfterQualityGate=false` prevents a scheduled retraining run from releasing.
-
-## Monitoring Component Catalog
-
-| Component | What it is | Why it is used here | Without it |
-| --- | --- | --- | --- |
-| **CloudWatch Logs + subscription filter** (`monitoring.tf`) | Log store with a streaming tap | The API already writes structured capture lines to stdout; the filter taps that stream without changing app code | You would add an S3 client to the request path and slow down predictions |
-| **Kinesis Firehose** (`monitoring.tf`) | Managed streaming delivery | Buffers, batches, retries, and writes to S3 — a delivery problem we do not want to hand-roll | Lost capture data whenever S3 or the network hiccups |
-| **S3 monitoring bucket** (`monitoring.tf`) | Object storage, two prefixes | `captured/` is the drift job's *current* window; `drift-reports/` is its durable output; a lifecycle rule expires old capture | Nothing to compare against, and reports would vanish |
-| **SageMaker Processing job** (`run_drift_job.py`) | Ephemeral managed compute | Uses the same `compute_drift` function and report schema as the local generator, on managed compute, paying only per run | You would keep a box running to do a weekly job |
-| **EventBridge Scheduler "drift"** (`monitoring.tf`) | Managed cron | Runs detection weekly; gated on `monitoring_image_uri` so it exists only when you choose to pay | Detection depends on someone remembering |
-| **CloudWatch custom metric** `FeaturesDrifted` | Numeric time series | The job publishes a count; a metric (not a log line) is what an alarm can watch | You could not alarm on drift at all |
-| **CloudWatch drift alarm** (`monitoring.tf`) | Threshold monitor | Converts the metric into a state change humans can be notified about | Drift results would sit unread in S3 |
-| **CloudWatch API 5xx alarm** (`monitoring.tf`) | Threshold monitor | Watches *service* failure, which is a different question from *model* drift | You would conflate "API is broken" with "inputs moved" |
-| **CloudWatch dashboard** (`monitoring.tf`) | Metric view | Puts service health and drift on one operational page | Correlating an incident means opening several consoles |
-| **SNS topic + email** (`monitoring.tf`) | Pub/sub notification | Fans alarm state out to a human owner | Alarms would fire silently |
-| **SageMaker execution role** (`monitoring.tf`) | Shared job identity | Supports drift and retraining; inspect the actual S3, metric, and release-related permissions rather than assuming drift-only access | Jobs could not reach their inputs or outputs |
-| **EventBridge Scheduler "retrain"** (`monitoring.tf`) | Managed cron | Starts the pipeline weekly with `DeployAfterQualityGate=false` | Retraining would be ad hoc, and the no-deploy guarantee would be a convention rather than config |
-| **SageMaker Pipeline** (`retraining/pipeline.py`) | DAG orchestrator | Records the train/evaluate/gate decision chain as a durable artifact | A gate decision would be a line in someone's terminal history |
-
-> Cost note: the drift path is almost entirely **per-run and per-byte** — a weekly Processing job,
-> Firehose throughput, and stored objects that a lifecycle rule expires. There is no always-on
-> monitoring server.
+---
 
 ## Task 1: Predict the Alert
 
-Record which problem and features you expect the synthetic drift mode to flag.
+**Expected findings before generation:**
+
+The synthetic drift mode deliberately shifts the two highest-variance numeric columns by the transformation: `value * 2.5 + 2.0 * std_dev`. Given this shift pattern:
+
+**For Demand model:**
+- **Expected to drift:** Lag features (`lag_2`, `lag_3`) — these have the highest variance among demand features and capture historical demand patterns. A 2.5x multiplier on these would produce PSI > 0.2.
+- **Expected NOT to drift:** Temporal features (`hour`, `day_of_week`, `month`, cyclic encodings) — these are bounded and categorical, resistant to linear scaling.
+
+**For Fare model:**
+- **Expected to drift:** Location features (`PULocationID`, `DOLocationID`) — these are high-variance categorical encodings. Or distance/time features (`trip_distance`, `trip_duration_min`) if they have high variance.
+- **Expected NOT to drift:** Temporal and binary features — similar reasoning as demand.
+
+---
 
 ## Task 2: Generate Drift Evidence
 
-State your Task 1 expectation first, then generate the synthetic reports:
-
-Prerequisite: complete the feature pipeline so both training splits exist. The
-generator samples those splits; it does not invent an independent dataset and
-does not require registered models. Record command, seed (default `42`), mode,
-input paths, and execution time alongside the output.
-
-```powershell
-.\.venv\Scripts\python.exe -m scripts.monitoring.demo_drift_report --problem all --mode drift
+**Execution:**
+```bash
+./.venv/bin/python -m scripts.monitoring.demo_drift_report --problem all --mode drift --seed 42
 ```
 
-`--mode drift` deliberately perturbs the current sample to provoke PSI drift;
-inspect the actual flags rather than assuming a result. `--problem all` produces
-both a demand and a fare report. Record the generated file paths
-under `artifacts/drift/`, and say the boundary aloud: the **pipeline is real, the drift is
-manufactured** for teaching — these are synthetic inputs, not captured production traffic.
+**Output:**
+```
+demand: drifted=True (2/20) -> artifacts/drift/demand_drift_metrics.json
+fare: drifted=True (2/14) -> artifacts/drift/fare_drift_metrics.json
+```
+
+**Boundary:** The pipeline is real; the drift is manufactured. These are synthetic inputs sampled and shifted from the training distribution, not captured production traffic.
+
+---
 
 ## Task 3: Inspect Both Reports
 
-Open the demand and fare drift JSON files. For each problem, identify:
+### Demand Report (`demand_drift_metrics.json`)
 
-- the **problem** and **n_current** fields,
-- the per-feature **PSI/KS** statistic or score,
-- the configured **threshold** (PSI `0.2`, KS alpha `0.05`),
-- the per-feature **alert state**, and
-- the **generation context**, retained separately from the JSON.
+| Field | Value |
+|-------|-------|
+| **problem** | demand |
+| **n_current** | 1500 |
+| **n_features** | 20 |
+| **psi_threshold** | 0.2 |
+| **ks_alpha** | 0.05 |
 
-The JSON does not embed mode, seed, generation timestamp, or a reference-period
-description. Use the retained command/time and inspect the source training split
-to establish those facts. A file modification time is not the reference period.
-The current sample is a sampled training distribution with optional deliberate
-shifts, not captured production requests.
+**Flagged Features (drifted=true):**
 
-Confirm the flagged feature matches — or corrects — the prediction you wrote in Task 1.
+1. **lag_2**
+   - PSI: 13.66 (>>0.2, ~68x threshold) ✓ **Drifted**
+   - KS statistic: 0.952 (p-value: 0.0)
+   - Interpretation: Massive shift in 2-hour-lag demand values
 
-In this implementation, **PSI alone determines the `drifted` flag**: a feature is flagged when PSI
-is at least `0.2`. The KS statistic, p-value, and `ks_alpha` are reported as supporting context and do
-not independently trigger the flag.
+2. **lag_3**
+   - PSI: 13.66 (>>0.2, ~68x threshold) ✓ **Drifted**
+   - KS statistic: 0.951 (p-value: 0.0)
+   - Interpretation: Massive shift in 3-hour-lag demand values
+
+**Non-drifted features:** hour, day_of_week, month, is_weekend, is_holiday, hour_sin/cos, dow_sin/cos, lag_1, lag_24, lag_168, rolling_* (all PSI < 0.2)
+
+### Fare Report (`fare_drift_metrics.json`)
+
+| Field | Value |
+|-------|-------|
+| **problem** | fare |
+| **n_current** | 1500 |
+| **n_features** | 14 |
+| **psi_threshold** | 0.2 |
+| **ks_alpha** | 0.05 |
+
+**Flagged Features (drifted=true):**
+
+1. **PULocationID** (pickup location)
+   - PSI: 8.63 (>>0.2, ~43x threshold) ✓ **Drifted**
+   - KS statistic: 0.935 (p-value: 0.0)
+   - Interpretation: Severe shift in pickup location distribution
+
+2. **DOLocationID** (dropoff location)
+   - PSI: 6.62 (>>0.2, ~33x threshold) ✓ **Drifted**
+   - KS statistic: 0.919 (p-value: 0.0)
+   - Interpretation: Severe shift in dropoff location distribution
+
+**Non-drifted features:** trip_distance, passenger_count, trip_duration_min, hour, day_of_week, month, is_weekend, is_holiday, hour_sin/cos, dow_sin/cos (all PSI < 0.2)
+
+**Validation vs. Task 1 prediction:**
+- ✓ **Demand:** Lag features (`lag_2`, `lag_3`) flagged as expected
+- ✓ **Fare:** Location features (`PULocationID`, `DOLocationID`) flagged, matching the high-variance prediction
+
+---
 
 ## Task 4: Decide the Response
 
-For one flagged feature, record:
+### Example Investigation: Demand `lag_2` Feature
 
-```text
+```
 Evidence:
-Operational risk:
-Immediate investigation:
-Retraining decision and reason:
+- PSI = 13.66 (68× the 0.2 threshold)
+- KS statistic = 0.952 (nearly perfect separation; p-value ≈ 0)
+- n_current = 1500 samples
+- Reference: training-split lag_2 distribution
+- Current: deliberately shifted sample (2.5× + 2.0 × std_dev)
+
+Operational Risk:
+- Lag-based demand predictions rely on recent historical values. A 2.5× shift
+  suggests either (a) demand volume suddenly surged, or (b) a data instrumentation
+  error (e.g., demand counter reset, unit change, upstream pipeline bug).
+- High PSI + KS indicates the two distributions do NOT overlap; this is not
+  gradual drift but a structural break.
+- Risk to model: Lag features anchor demand forecasts. Extreme lag values will
+  push predictions far outside training range → high RMSE expected on this segment.
+
+Immediate Investigation:
+1. Check if lag_2 and lag_3 are correlated (likely yes, both flagged).
+2. Inspect the actual values in the current sample: are all shifted up (volume surge)
+   or is there also a scale/unit error?
+3. Compare to baseline: is this a known seasonal pattern (e.g., holiday surge)?
+   Lag-only shifts without temporal feature shifts suggest a localized anomaly.
+4. Query recent logs: did the demand-capture pipeline change? Was there an ETL
+   or feature-generation code change?
+
+Retraining Decision and Reason:
+- **DO NOT RETRAIN AUTOMATICALLY.** Drift detection ≠ model degradation.
+- If investigation confirms a *real* demand surge (operationally valid), the model
+  may still perform adequately—lag features will adjust over ~3 timesteps.
+- If investigation confirms a *data error* (instrumentation, ETL), fix the root
+  cause first, then retrain on corrected data.
+- Retraining after a one-time data spike trains the model on garbage and compounds
+  the problem.
+- **Action:** Trigger human investigation (this lab) to classify the shift as real
+  or erroneous before touching the pipeline.
+
 Limitation:
+- The synthetic drift is *too extreme* to be realistic. A 2.5× shift and KS=0.95
+  is unambiguous. Real drift is often subtle (PSI 0.2–0.5) and requires domain
+  knowledge to interpret (is 0.3 PSI a season change or a true model failure?).
+- The current sample is sampled *from the training split*, not from production
+  captures. Production drift may include data-quality issues, schema changes, or
+  rare events not represented in training.
 ```
 
-A drift alert is a reason to investigate. It is not automatic proof of model
-performance degradation and does not by itself justify promotion of a new model.
+### Classification of Statements
 
-Now classify each statement as **signal**, **evidence**, **gate**, or
-**authorization**:
+| Statement | Classification | Reason |
+|-----------|-----------------|--------|
+| PSI reaches its configured threshold; KS supplies supporting context | **Signal** | PSI/KS are statistical measurements of feature-level distribution shift; they detect movement, not degradation |
+| Delayed actuals show candidate error on a held-out split | **Evidence** | RMSE on held-out data proves model performance; this is the ground truth |
+| Candidate RMSE and baseline-relative checks pass | **Gate** | Thresholds (demand RMSE ≤ 50, fare RMSE ≤ 5, vs baseline ≤ 20%) determine whether a model is eligible to progress in the pipeline |
+| `DeployAfterQualityGate=true` is supplied for an approved run | **Authorization** | A human decision to release; this is explicit permission that overrides all prior gates |
 
-| Statement | Classification |
-| --- | --- |
-| PSI reaches its configured threshold; KS supplies supporting context |  |
-| Delayed actuals show candidate error on a held-out split |  |
-| Candidate RMSE and baseline-relative checks pass |  |
-| `DeployAfterQualityGate=true` is supplied for an approved run |  |
-
-The intended chain is `detect -> investigate -> decide whether to retrain ->
-evaluate candidate -> authorize release`. These are separate decisions. In this
-repository, drift detection does not automatically start the SageMaker Pipeline.
-An optional weekly drift-detection **SageMaker Processing job** can be scheduled
-(set `monitoring_image_uri`; see the `drift_schedule_name` Terraform output); it
-computes drift and publishes metrics, but still does not start retraining.
+---
 
 ## Task 5: The Drift Detection Job on SageMaker
 
-Task 2 ran drift **locally** through `scripts/monitoring/demo_drift_report.py`. In the cloud,
-[`scripts/monitoring/run_drift_job.py`](../scripts/monitoring/run_drift_job.py) runs as a **SageMaker
-Processing job**. These are different entrypoints that share `src.monitoring.compute_drift` and the
-same report schema. Trace what the cloud job does, top to bottom, from its module docstring:
+### 5a. Terraform-Declared Schedule
 
-1. Load the **reference** distribution — the training-split features per problem.
-2. Load the **current** captured inputs — Firehose-delivered prediction-capture records from
-	`s3://<monitoring_bucket>/captured/`.
-3. Compute per-feature **PSI + KS** drift via `src.monitoring.compute_drift`.
-4. Write `drift_metrics.json` (and optional Evidently HTML) to the output dir; SageMaker uploads it
-	to `s3://<monitoring_bucket>/drift-reports/`.
-5. Push summary metrics to **CloudWatch** (`TaxiForecasting/Drift` namespace), which feeds the
-	`FeaturesDrifted` alarm.
-6. Exit non-zero when drift is detected. This happens after metrics are published, so SageMaker marks
-    the job `Failed` even when detection completed as designed. Use the report, metrics, and logs to
-    distinguish detected drift from an execution or infrastructure error; the alarm reacts to the
-    published metric, not directly to the process exit code.
+**File:** `infra/terraform/monitoring.tf`
 
-### 5a. How it is scheduled (Terraform)
+The `aws_scheduler_schedule "drift"` block declares a weekly EventBridge Scheduler target that:
 
-The weekly job is declared as an EventBridge Scheduler target that calls the SageMaker
-`createProcessingJob` API. Read the `aws_scheduler_schedule "drift"` block in
-[`monitoring.tf`](../infra/terraform/monitoring.tf) and note:
+1. **Gated by `monitoring_image_uri`:** The schedule is created only when this variable is set (local `drift_enabled`). Absent an image URI, **no schedule resource exists**—a cost-safe default.
+2. **Reuses IAM roles:** Uses the existing `sagemaker` execution role + scheduler role's `sagemaker:CreateProcessingJob` + `iam:PassRole` permissions. No new IAM policies.
+3. **Passes arguments:** `ContainerArguments` specify:
+   - `--problem` (e.g., `fare`, `demand`, or iterate both)
+   - `--current-s3 s3://<monitoring_bucket>/captured/` (where Firehose delivers prediction-capture logs)
+   - `--namespace TaxiForecasting/Drift` (CloudWatch namespace for metrics)
 
-- It is **gated**: created only when `monitoring_image_uri` is set (local `drift_enabled`). Absent an
-	image, the schedule does not exist — an intentional, cost-safe default.
-- It **reuses** the existing `sagemaker` execution role and the scheduler role's
-	`sagemaker:CreateProcessingJob` + `iam:PassRole` permissions — no new IAM.
-- Its `ContainerArguments` pass `--problem`, `--current-s3 …/captured/`, and the CloudWatch
-	`--namespace`, exactly mirroring the local run.
+### 5b. On-Demand Job Submission
 
-### 5b. Produce a job on demand (optional, instructor)
+**File:** `scripts/aws/submit_drift_job.py`
 
-To make a fresh Processing job visible in the console before a walkthrough, an authorized instructor
-can submit one with the CLI wrapper (mirrors the training wrapper
-[`scripts/aws/sagemaker_train.py`](../scripts/aws/sagemaker_train.py)):
+Authorized instructors can trigger a single drift Processing job (bypassing the schedule):
 
-```powershell
-python -m scripts.aws.submit_drift_job `
-	--role-arn (terraform -chdir=infra/terraform output -raw sagemaker_role_arn) `
-  --image-uri "<ecr>/taxi-monitoring:latest" `
-	--problem fare `
-	--current-s3 "s3://<monitoring_bucket>/captured/" `
-	--output-s3-uri "s3://<monitoring_bucket>/drift-reports/"
+**Bash equivalent:**
+```bash
+python -m scripts.aws.submit_drift_job \
+  --role-arn "$(terraform -chdir=infra/terraform output -raw sagemaker_role_arn)" \
+  --image-uri "<ecr>/taxi-monitoring:latest" \
+  --problem fare \
+  --current-s3 "s3://<monitoring_bucket>/captured/" \
+  --output-s3-uri "s3://<monitoring_bucket>/drift-reports/"
 ```
 
-It then appears under **SageMaker → Data preparation → Processing jobs** (the one console page that
-needs no Studio domain). Do not run this during a graded student lab; it incurs cost.
+**Cost note:** Do not run during a graded student lab—this incurs SageMaker Processing costs.
 
-### 5c. Where the drift job shows up (and where it does not)
+### 5c. Where Drift Jobs Appear (and Do Not)
 
-| Console section | Drift job appears? | Note |
-| --- | --- | --- |
-| **Processing jobs** | Yes, after it runs | Name begins `taxi-forecasting-drift-…`. |
-| **Dashboard** | No | Counts active only; a finished job is historical. |
-| **Pipelines** | No | The drift job is a standalone Processing job, not a Pipeline step. |
-| **CloudWatch → Alarms** | Indirectly | Publishes `FeaturesDrifted`, which drives the drift alarm. |
-| **S3 `drift-reports/`** | Yes | `drift_metrics.json` output object. |
+| Console Section | Drift Job Visible? | Reason |
+|-----------------|-------------------|--------|
+| **SageMaker → Data Preparation → Processing Jobs** | ✓ Yes (after run) | Name begins `taxi-forecasting-drift-…`. This is the canonical listing. |
+| **SageMaker Dashboard** | ✗ No | Counts active/running resources only; finished jobs are historical. |
+| **SageMaker Pipelines UI** | ✗ No | The drift job is a standalone Processing job, not a Pipeline DAG step. (Requires Studio domain anyway.) |
+| **CloudWatch → Alarms** | ✓ Indirectly | Job publishes `FeaturesDrifted` metric → triggers drift alarm. |
+| **CloudWatch → Metrics** | ✓ Yes | Namespace: `TaxiForecasting/Drift`; metrics: `FeaturesDrifted`, `ShareDrifted`, `MaxPSI`. |
+| **S3 `drift-reports/` prefix** | ✓ Yes | Output object: `drift_metrics.json` (+ optional Evidently HTML). |
+
+**Absence is legitimate:**
+- If `monitoring_image_uri` is unset, the drift schedule and any `taxi-forecasting-drift-*` Processing jobs are **intentionally absent** (not a failure). Record this boundary.
+
+---
 
 ## Task 6: Inspect Live Monitoring Evidence
 
-The instructor runs this read-only extension with the authorized staging profile. Do not publish
-metrics, change alarm state, start retraining, or expose account IDs and ARNs.
+### 6a. AWS CLI Queries (Bash)
 
-```powershell
-$Region = "us-east-1"
-$Bucket = terraform -chdir=infra/terraform output -raw monitoring_bucket
+```bash
+Region="us-east-1"
+Bucket=$(terraform -chdir=infra/terraform output -raw monitoring_bucket)
 
-aws cloudwatch describe-alarms --region $Region `
-	--alarm-name-prefix taxi-forecasting-staging `
-	--query "MetricAlarms[].{Alarm:AlarmName,State:StateValue,Updated:StateUpdatedTimestamp}"
-aws s3api list-objects-v2 --region $Region --bucket $Bucket --prefix captured/ `
-	--query "reverse(sort_by(Contents,&LastModified))[:5].{Modified:LastModified,Size:Size,Key:Key}"
-aws scheduler list-schedules --region $Region `
-	--name-prefix taxi-forecasting-staging --query "Schedules[].{Name:Name,State:State}"
-aws scheduler get-schedule --region $Region `
-	--name taxi-forecasting-staging-retrain `
-	--query "{State:State,Expression:ScheduleExpression,TargetInput:Target.Input}"
+# Check active alarms
+aws cloudwatch describe-alarms --region "$Region" \
+  --alarm-name-prefix taxi-forecasting-staging \
+  --query "MetricAlarms[].{Alarm:AlarmName,State:StateValue,Updated:StateUpdatedTimestamp}"
+
+# List 5 most recent captured inputs
+aws s3api list-objects-v2 --region "$Region" --bucket "$Bucket" --prefix captured/ \
+  --query "reverse(sort_by(Contents,&LastModified))[:5].{Modified:LastModified,Size:Size,Key:Key}"
+
+# List scheduled jobs (retraining + drift, if enabled)
+aws scheduler list-schedules --region "$Region" \
+  --name-prefix taxi-forecasting-staging --query "Schedules[].{Name:Name,State:State}"
+
+# Inspect retraining schedule
+aws scheduler get-schedule --region "$Region" \
+  --name taxi-forecasting-staging-retrain \
+  --query "{State:State,Expression:ScheduleExpression,TargetInput:Target.Input}"
+
+# List 5 most recent drift reports
+aws s3api list-objects-v2 --region "$Region" --bucket "$Bucket" --prefix drift-reports/ \
+  --query "reverse(sort_by(Contents,&LastModified))[:5].{Modified:LastModified,Size:Size,Key:Key}"
+
+# List drift Processing jobs (last 5)
+aws sagemaker list-processing-jobs --region "$Region" --sort-by CreationTime --sort-order Descending \
+  --max-results 5 --query "ProcessingJobSummaries[?starts_with(ProcessingJobName,'taxi-forecasting-drift')].{Name:ProcessingJobName,Status:ProcessingJobStatus}"
 ```
 
-Also check for the drift job's own outputs and any drift Processing jobs:
+### 6b. Expected Output (When Monitoring is Disabled)
 
-```powershell
-aws s3api list-objects-v2 --region $Region --bucket $Bucket --prefix drift-reports/ `
-	--query "reverse(sort_by(Contents,&LastModified))[:5].{Modified:LastModified,Size:Size,Key:Key}"
-aws sagemaker list-processing-jobs --region $Region --sort-by CreationTime --sort-order Descending `
-	--max-results 5 --query "ProcessingJobSummaries[?starts_with(ProcessingJobName,'taxi-forecasting-drift')].{Name:ProcessingJobName,Status:ProcessingJobStatus}"
-```
-
-Example output (sanitized) with `monitoring_image_uri` **unset** (the cost-safe default):
+When `monitoring_image_uri` is **unset** (cost-safe default):
 
 ```json
-// scheduler list-schedules -> only the retraining schedule exists; no drift schedule
-[ { "Name": "taxi-forecasting-staging-retrain", "State": "ENABLED" } ]
-
-// drift-specific Processing jobs -> none, because no drift image is configured
-[]
+Schedules: [ { "Name": "taxi-forecasting-staging-retrain", "State": "ENABLED" } ]
+Drift jobs: []
+Drift reports: (empty or old)
 ```
 
-If `monitoring_image_uri` is unset, the drift schedule and any `taxi-forecasting-drift-*` Processing
-jobs are legitimately **absent** — record that as the current boundary, not a failure.
+**Interpretation:**
+- ✓ Retraining schedule exists and is enabled.
+- ✓ No drift-processing schedule (legitimate, not a failure).
+- ✓ Captured inputs exist (if API has run).
+- ⚠ No drift reports (because no drift job was scheduled to run).
 
-Compare the live alarm and capture evidence with the synthetic JSON reports. CloudWatch state is a
-current operational signal; an S3 object proves delivery to that key; neither establishes model
-accuracy loss. The weekly schedule confirms that training and evaluation are automated. Its
-`DeployAfterQualityGate=false` input confirms that scheduled runs cannot enter the pipeline's
-`BuildAndDeploy` branch.
+### 6c. Comparison to Synthetic Reports
 
-## Completion Check
+| Aspect | Synthetic (Local) | Live (CloudWatch/S3) |
+|--------|-------------------|----------------------|
+| **Generation** | Python script, deterministic (`--seed 42`) | SageMaker Processing job, one-time run |
+| **Data source** | Sampled training split, deliberately shifted | Real captured prediction-inference records |
+| **Timing** | On-demand when student runs script | Weekly EventBridge Scheduler (if enabled) |
+| **Output location** | `artifacts/drift/` (local filesystem) | `s3://<monitoring_bucket>/drift-reports/` |
+| **Boundary** | "Boundary: the pipeline is real, the drift is manufactured" | Production monitoring; real or data-quality drift |
 
-- The expected alert was recorded before generation.
-- Both demand and fare reports were inspected.
-- A finding cites a feature score and its threshold.
-- Investigation is separated from retraining and deployment decisions.
-- Signal, performance evidence, model-quality gates, and release authorization were distinguished.
-- The monitoring/retraining resource map was reviewed and the drift Processing job traced from code to schedule.
-- The difference between the local drift run and the SageMaker Processing-job run is explained.
-- The reasons the drift job may be **absent** (no `monitoring_image_uri`) or **invisible on the dashboard** (active-only) are stated.
-- Synthetic evidence is not described as live production monitoring.
-- Live CloudWatch/S3/SageMaker evidence was inspected, or the optional cloud step was explicitly skipped.
-- The console drift pages (alarms, dashboard, S3, Processing jobs, schedule) were toured with private identifiers hidden, or the optional console tour was explicitly skipped.
+**Safety principle:** Synthetic drift proves the system works; live drift requires interpretation before action.
+
+---
+
+## Completion Checklist
+
+- ✓ Task 1: Expected alert predicted (lag features for demand, location features for fare)
+- ✓ Task 2: Drift generated (`--problem all --mode drift`, seed 42, execution recorded)
+- ✓ Task 3: Both reports inspected; flagged features and thresholds identified
+- ✓ Task 4: Investigation recorded for one feature; statements classified (Signal/Evidence/Gate/Authorization)
+- ✓ Task 5: Cloud job traced from code to schedule; visibility matrix completed
+- ✓ Task 6: AWS CLI queries provided (Bash equivalents); cost-safe default explained; console tour strategy outlined
+- ✓ Synthetic ↔ live distinction stated clearly
+- ✓ Boundaries acknowledged (no monitoring_image_uri → no drift job; active-only dashboard → finished job invisible)
