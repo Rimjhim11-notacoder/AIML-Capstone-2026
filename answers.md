@@ -413,7 +413,7 @@ Show monitoring metrics and execute drift detection report with alert interpreta
 ```
 ```bash
 # Bash
-.venv/bin/python -m scripts.monitoring.demo_drift_report --problem all --mode drift --seed 42
+.venv/bin/python -m scripts.monitoring.demo_drift_report --problem fare --mode drift --seed 42
 ```
 
 **Step 2: View drift reports**
@@ -468,7 +468,7 @@ from training data. Could indicate service area expansion,
 geographically-clustered outages, or data collection issues."
 ```
 
-#### Response Decision (What to Say in Video)
+#### Response Decision ()
 ```
 "When drift is detected:
 1. DO NOT retrain automatically
@@ -518,7 +518,7 @@ Get-ChildItem docs\model_cards\
 | **Fairness Report - Fare** | `artifacts/responsible/fare_fairness.json` | Subgroup error comparisons (borough, time, airport) |
 | **Model Cards** | `docs/model_cards/demand.md`, `docs/model_cards/fare.md` | Limitations, intended use, monitoring recommendations |
 
-### What to Explain in Video - SHAP Analysis
+### What to Explain  - SHAP Analysis
 
 #### SHAP Beeswarm Plot Reading
 ```
@@ -555,21 +555,40 @@ For example:
 
 #### Fairness Report Structure
 ```
-For each subgroup (e.g., airport vs. non-airport trips):
-- n: How many test samples in this group
-- RMSE: Average prediction error (in dollars)
-- MAE: Absolute error
-- MAPE: Percentage error
-- disparity_ratio: Worst group RMSE / Best group RMSE
+---------------------------
+Demand Model Fairness Report
+-----------------------------
 
-Example output:
-"Airport trips: RMSE=$5.20, Non-airport: RMSE=$2.80
- Ratio: 5.20/2.80 = 1.86 → FLAGGED (> 1.5 threshold)"
-```
+Airport Disparity (matches the documented example):
+
+Airport trips:    RMSE=$37.73, n=116
+Non-airport:      RMSE=$7.97,  n=14,457
+Ratio: 37.73/7.97 = 4.74 → FLAGGED (> 1.5 thresho
+
+Other Flagged Disparities:
+
+- Borough: 211.13× disparity (Manhattan worst: $1: $0.07) 
+- Time of Day: 2.70× (Evening worst: $11.66 vs Overnight best: $4.32)
+
+---
+-----------------------------
+Fare Model Fairness Report
+------------------------------
+Airport Disparity:
+
+Airport trips:    RMSE=$7.41,  n=20,957
+Non-airport:      RMSE=$2.91,  n=251,778
+Ratio: 7.41/2.91 = 2.54 → FLAGGED (> 1.5 threshold)
+
+Other Flagged Disparities:
+
+- Borough: 8.12× (Unknown worst: $18.42 vs Manhattan best: $2.27) ⚠️
+- Time of Day: 1.84× (Overnight worst: $5.61 vs E
+
 
 #### What to Say About Flagged Disparities
 ```
-"A 1.86× ratio means the model is less accurate on airport trips.
+"A 2.54× ratio means the model is less accurate on airport trips.
 This could be because:
 1. Airport trips are longer and rarer in training data
 2. There are more confounding factors (taxi demand, traffic)
