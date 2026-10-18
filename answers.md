@@ -6,7 +6,6 @@ These are the commands needed to successfully demonstrate all 8 tasks for the 12
 ---
 
 ## Task 1: Data Pipeline
-
 ### Goal
 Show data source, execute pipeline command, and display processed dataset with validation results.
 
@@ -28,7 +27,7 @@ grep -E 'year|month|data_dir' config/config.yaml
 .\.venv\Scripts\python.exe -m scripts.run_pipeline --year 2024 --month 1
 
 # Or skip download if data exists
-.\.venv\Scripts\python.exe -m scripts.run_pipeline --skip-download
+grep -E 'year|month|data_dir' config/config.yaml
 ```
 ```bash
 # Bash - Full run with download
