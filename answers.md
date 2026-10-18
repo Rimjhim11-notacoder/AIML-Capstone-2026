@@ -144,6 +144,14 @@ docker compose -f docker/docker-compose.yml up --build
 API: http://localhost:8001
 MLflow UI: http://localhost:5001
 
+
+```bash
+docker version
+export TAXI_API_HOST_PORT=8001
+export MLFLOW_UI_HOST_PORT=5001
+docker compose -f docker/docker-compose.yml up --build
+```
+
 **Route B: Local Python (no Docker required)**
 ```powershell
 # PowerShell
@@ -154,6 +162,8 @@ MLflow UI: http://localhost:5001
 .venv/bin/python -m uvicorn src.serving.api:app --host 127.0.0.1 --port 8000
 ```
 API: http://127.0.0.1:8000
+
+
 
 **Step 3: Verify API health**
 ```powershell
