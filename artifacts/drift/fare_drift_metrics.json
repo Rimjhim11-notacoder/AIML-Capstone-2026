@@ -1,0 +1,110 @@
+{
+  "problem": "fare",
+  "n_current": 1500,
+  "n_features": 14,
+  "n_drifted": 2,
+  "share_drifted": 0.14285714285714285,
+  "drifted": true,
+  "psi_threshold": 0.2,
+  "ks_alpha": 0.05,
+  "features": [
+    {
+      "feature": "trip_distance",
+      "psi": 0.002962681323072921,
+      "ks_statistic": 0.014102554724620409,
+      "ks_pvalue": 0.9225816938264966,
+      "drifted": false
+    },
+    {
+      "feature": "passenger_count",
+      "psi": 0.00031619127481111224,
+      "ks_statistic": 0.007385408631734425,
+      "ks_pvalue": 0.999996287554789,
+      "drifted": false
+    },
+    {
+      "feature": "trip_duration_min",
+      "psi": 0.0026718084822470282,
+      "ks_statistic": 0.020396770856679014,
+      "ks_pvalue": 0.5539963504243202,
+      "drifted": false
+    },
+    {
+      "feature": "PULocationID",
+      "psi": 8.68636895952506,
+      "ks_statistic": 0.944,
+      "ks_pvalue": 0.0,
+      "drifted": true
+    },
+    {
+      "feature": "DOLocationID",
+      "psi": 7.664545807029852,
+      "ks_statistic": 0.9386666666666666,
+      "ks_pvalue": 0.0,
+      "drifted": true
+    },
+    {
+      "feature": "hour",
+      "psi": 0.006254364983442709,
+      "ks_statistic": 0.007434807338078775,
+      "ks_pvalue": 0.9999955333785205,
+      "drifted": false
+    },
+    {
+      "feature": "day_of_week",
+      "psi": 0.004785477883900746,
+      "ks_statistic": 0.03109247671387827,
+      "ks_pvalue": 0.10793480166035296,
+      "drifted": false
+    },
+    {
+      "feature": "month",
+      "psi": 0.0,
+      "ks_statistic": 0.0,
+      "ks_pvalue": 1.0,
+      "drifted": false
+    },
+    {
+      "feature": "is_weekend",
+      "psi": 0.0,
+      "ks_statistic": 0.01534436602579703,
+      "ks_pvalue": 0.8664982018697777,
+      "drifted": false
+    },
+    {
+      "feature": "is_holiday",
+      "psi": 0.0,
+      "ks_statistic": 0.004390606445178635,
+      "ks_pvalue": 1.0,
+      "drifted": false
+    },
+    {
+      "feature": "hour_sin",
+      "psi": 0.003546685834824606,
+      "ks_statistic": 0.011332908928496949,
+      "ks_pvalue": 0.9894729345310478,
+      "drifted": false
+    },
+    {
+      "feature": "hour_cos",
+      "psi": 0.005711686217852965,
+      "ks_statistic": 0.01141921435606652,
+      "ks_pvalue": 0.9885242008544293,
+      "drifted": false
+    },
+    {
+      "feature": "dow_sin",
+      "psi": 0.004176650909564776,
+      "ks_statistic": 0.024565397989531057,
+      "ks_pvalue": 0.32092217265748646,
+      "drifted": false
+    },
+    {
+      "feature": "dow_cos",
+      "psi": 0.004835003043719726,
+      "ks_statistic": 0.021724422848379776,
+      "ks_pvalue": 0.47237666228420583,
+      "drifted": false
+    }
+  ]
+}
