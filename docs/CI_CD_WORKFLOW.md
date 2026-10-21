@@ -1,10 +1,10 @@
-# CI/CD Workflow & Deployment Status
+# CI/CD Workflow & Build Status
 
-This document describes the GitHub Actions CI/CD pipeline and how to view deployment status.
+This document describes the GitHub Actions CI/CD pipeline and how to view build status.
 
 ## Workflow Overview
 
-The automated CI/CD pipeline runs on every push and pull request, and automatically deploys to AWS ECS when changes are merged to the `main` branch.
+The automated CI/CD pipeline runs on every push and pull request. When changes are merged to the `main` branch, it builds and smoke-tests the Docker image locally on the GitHub Actions runner.
 
 ### Pipeline Stages
 
@@ -14,16 +14,16 @@ The automated CI/CD pipeline runs on every push and pull request, and automatica
    - Run pytest with coverage
    - Upload coverage to Codecov
 
-2. **Build & Deploy** (runs only on main branch)
-   - Configure AWS credentials via OIDC
-   - Login to Amazon ECR
-   - Fetch pre-built artifacts from S3
-   - Build Docker image
-   - Push image to ECR
-   - Update ECS service for zero-downtime deployment
-   - Wait for deployment to stabilize
+2. **Build & Run (Local Docker)** (runs only on main branch)
+   - Generate synthetic fixture data (using the same TLC schema as real data)
+   - Run the full pipeline against the fixture data
+   - Train models with reduced hyperparameter tuning (--n-trials 2 for speed)
+   - Build the Docker image locally
+   - Start the API container on the runner
+   - Smoke test the /health endpoint to verify the service starts correctly
+   - Clean up containers
 
-3. **Deployment Status**
+3. **Build Status**
    - Report final status to GitHub Actions
 
 ## Viewing Workflow Runs
@@ -68,49 +68,45 @@ These badges show:
 - **Pipeline Badge**: Green (✅) when main passes, red (❌) when failed
 - **Coverage Badge**: Test coverage percentage on main branch
 
-## AWS Secrets Configuration
+## Secrets Configuration
 
-For the workflow to deploy to AWS, configure these GitHub Secrets:
+No AWS secrets are required. The workflow uses Docker Compose to build and test the image locally on the GitHub Actions runner.
 
-1. Go to **Settings** → **Secrets and variables** → **Actions**
-2. Create these secrets:
-
-| Secret Name | Value |
-|---|---|
-| `AWS_REGION` | `us-east-1` (or your region) |
-| `AWS_ROLE_TO_ASSUME` | ARN of IAM role for OIDC |
-| `ECR_REPOSITORY_URL` | `account-id.dkr.ecr.region.amazonaws.com/repo-name` |
-| `ECS_CLUSTER` | Name of your ECS cluster |
-| `ECS_SERVICE` | Name of your ECS service |
-| `ARTIFACTS_BUCKET` | S3 bucket name for pre-built artifacts |
-
-## Understanding Deployment Flow
+## Understanding Build Flow
 
 ### On Pull Request
 - ✅ Linting passes
 - ✅ Tests pass with coverage
-- ❌ Does NOT deploy (protected by `if: github.ref == 'refs/heads/main'`)
+- ❌ Does NOT build image (protected by `if: github.ref == 'refs/heads/main'`)
 - Shows code review checks passed
 
 ### On Push to Main
 - ✅ Linting passes
 - ✅ Tests pass with coverage
-- ✅ Docker image built and pushed to ECR
-- ✅ ECS service updated with new image
-- ✅ Zero-downtime deployment (rolling update)
-- ✅ Deployment status reported
+- ✅ Fixture data generated and models trained locally
+- ✅ Docker image built locally
+- ✅ API container started on the runner
+- ✅ /health endpoint verified (smoke test)
+- ✅ Containers cleaned up
+- ✅ Build status reported
 
 ## Troubleshooting
 
-### Workflow fails at build stage
-- Check Docker credentials in AWS Secrets
-- Verify ECR repository exists
-- Check Docker build context (Dockerfile path)
+### Workflow fails at fixture generation or training stage
+- Verify `requirements.txt` has all needed dependencies
+- Check `tests/synthetic.py` exists and is importable
+- Run locally: `python -m scripts.generate_ci_fixture_data`
 
-### Workflow fails at deployment stage
-- Verify ECS cluster and service names are correct
-- Check IAM permissions for ECS updates
-- Review CloudWatch logs for ECS task failures
+### Workflow fails at Docker build stage
+- Check Docker build context and Dockerfile path
+- Run locally: `docker compose -f docker/docker-compose.yml build api`
+- Review Docker layer caching and dependencies
+
+### Workflow fails at health check (smoke test)
+- The /health endpoint may take a moment to become ready; retries are built in
+- Check `docker compose logs api` (logs are dumped on failure)
+- Verify the API image exposes port 8000: `docker inspect <image> | grep ExposedPorts`
+- Run locally: `docker compose -f docker/docker-compose.yml up api` and curl `/health`
 
 ### Tests fail locally but pass in CI
 - Ensure Python version is 3.11+
@@ -132,29 +128,41 @@ pytest --cov=src --cov-report=term-missing
 docker build -f docker/Dockerfile -t taxi-forecasting:test .
 ```
 
-## Monitoring Deployments
+## Local Testing
 
-### Real-time Monitoring
+Before pushing to main, test the build locally using the same steps as CI:
 
 ```bash
-# Watch ECS service status
-aws ecs describe-services \
-  --cluster <cluster-name> \
-  --services <service-name> \
-  --region <region>
+# Generate fixture data
+python -m scripts.generate_ci_fixture_data
 
-# Stream CloudWatch logs
-aws logs tail /ecs/taxi-forecasting --follow
+# Run the pipeline
+python -m scripts.run_pipeline --skip-download
+
+# Train models with reduced trials
+python -m scripts.train_models --n-trials 2
+
+# Make MLflow portable for Docker
+python scripts/make_mlflow_portable.py --src mlflow.db --dest mlflow.container.db --new-base file:///app/mlruns
+
+# Build and test the Docker image
+docker compose -f docker/docker-compose.yml up --build -d api
+
+# Test the health endpoint
+curl -s http://localhost:8000/health | python -m json.tool
+
+# Clean up
+docker compose -f docker/docker-compose.yml down -v
 ```
 
 ### Rollback Strategy
 
-If deployment issues occur:
+If a build fails on main:
 
 ```bash
-# Revert to previous commit
+# Revert the problematic commit
 git revert <commit-hash>
 git push origin main  # Triggers new workflow with previous version
 ```
 
-The pipeline will automatically re-run and deploy the previous stable version.
+The pipeline will automatically re-run with the previous stable version. Since we're not deploying to a persistent service, there's no need for a complex rollback — just pushing to main triggers a new build.
