@@ -413,7 +413,7 @@ Show monitoring metrics and execute drift detection report with alert interpreta
 ```
 ```bash
 # Bash
-.venv/bin/python -m scripts.monitoring.demo_drift_report --problem fare --mode drift --seed 42
+.venv/bin/python -m scripts.monitoring.demo_drift_report --problem demand --mode drift --seed 42
 ```
 
 **Step 2: View drift reports**
